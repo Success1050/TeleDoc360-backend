@@ -1,0 +1,444 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  // output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum AppointmentStatus {
+  REQUESTED
+  APPROVED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+  RESCHEDULED
+}
+
+enum AppointmentType {
+  CONSULTATION
+  FOLLOW_UP
+  EMERGENCY
+  ROUTINE_CHECKUP
+}
+
+enum SlotStatus {
+  AVAILABLE
+  RESERVED
+  BLOCKED
+}
+
+enum NotificationType {
+  APPOINTMENT_CONFIRMATION
+  APPOINTMENT_REMINDER
+  APPOINTMENT_CANCELLATION
+  APPOINTMENT_RESCHEDULED
+  VERIFICATION_EMAIL
+  PASSWORD_RESET
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+// ============================================
+// USER MANAGEMENT MODELS
+// ============================================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  passwordHash      String
+  role              UserRole
+  isEmailVerified   Boolean   @default(false)
+  isActive          Boolean   @default(true)
+  emailVerifiedAt   DateTime?
+  lastLoginAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relationships
+  patient           Patient?
+  doctor            Doctor?
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Patient {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  firstName         String
+  lastName          String
+  phoneNumber       String?
+  dateOfBirth       DateTime
+  gender            Gender
+  address           String?
+  city              String?
+  state             String?
+  country           String    @default("Nigeria")
+  emergencyContact  String?
+  bloodGroup        String?
+  profilePicture    String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relationships
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments      Appointment[]
+  medicalRecords    MedicalRecord[]
+  allergies         Allergy[]
+  prescriptions     Prescription[]
+
+  @@index([userId])
+  @@index([lastName, firstName])
+  @@map("patients")
+}
+
+model Doctor {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  firstName             String
+  lastName              String
+  phoneNumber           String?
+  gender                Gender
+  specialization        String
+  qualifications        String[]
+  licenseNumber         String    @unique
+  yearsOfExperience     Int
+  consultationFee       Decimal   @db.Decimal(10, 2)
+  bio                   String?
+  profilePicture        String?
+  rating                Decimal?  @db.Decimal(3, 2)
+  totalRatings          Int       @default(0)
+  isAvailableForBooking Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Relationships
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments          Appointment[]
+  availabilitySlots     AvailabilitySlot[]
+  medicalRecords        MedicalRecord[]
+  prescriptions         Prescription[]
+
+  @@index([userId])
+  @@index([specialization])
+  @@index([licenseNumber])
+  @@map("doctors")
+}
+
+// ============================================
+// APPOINTMENT MANAGEMENT MODELS
+// ============================================
+
+model Appointment {
+  id                String            @id @default(uuid())
+  patientId         String
+  doctorId          String
+  appointmentDate   DateTime
+  appointmentTime   DateTime
+  duration          Int               @default(30) // in minutes
+  type              AppointmentType   @default(CONSULTATION)
+  status            AppointmentStatus @default(REQUESTED)
+  reason            String?
+  symptoms          String?
+  notes             String?
+  consultationNotes String?
+  cancelledBy       String?
+  cancellationReason String?
+  cancelledAt       DateTime?
+  approvedAt        DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relationships
+  patient           Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor            Doctor            @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  statusHistory     AppointmentStatusHistory[]
+  medicalRecord     MedicalRecord?
+  prescription      Prescription?
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentDate])
+  @@index([status])
+  @@index([appointmentDate, appointmentTime])
+  @@map("appointments")
+}
+
+model AppointmentStatusHistory {
+  id            String            @id @default(uuid())
+  appointmentId String
+  previousStatus AppointmentStatus?
+  newStatus     AppointmentStatus
+  changedBy     String?
+  reason        String?
+  timestamp     DateTime          @default(now())
+
+  // Relationships
+  appointment   Appointment       @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([appointmentId])
+  @@index([timestamp])
+  @@map("appointment_status_history")
+}
+
+model AvailabilitySlot {
+  id          String      @id @default(uuid())
+  doctorId    String
+  dayOfWeek   Int         // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime   String      // Format: "HH:MM" (e.g., "09:00")
+  endTime     String      // Format: "HH:MM" (e.g., "17:00")
+  date        DateTime?   // For specific date availability (overrides dayOfWeek)
+  status      SlotStatus  @default(AVAILABLE)
+  isRecurring Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relationships
+  doctor      Doctor      @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+  @@index([dayOfWeek])
+  @@index([date])
+  @@index([status])
+  @@map("availability_slots")
+}
+
+// ============================================
+// MEDICAL RECORDS MODELS
+// ============================================
+
+model MedicalRecord {
+  id              String    @id @default(uuid())
+  patientId       String
+  doctorId        String
+  appointmentId   String?   @unique
+  diagnosis       String
+  symptoms        String[]
+  vitalSigns      Json?     // {temperature, bloodPressure, heartRate, etc.}
+  labResults      String?
+  notes           String?
+  followUpRequired Boolean  @default(false)
+  followUpDate    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentId])
+  @@index([createdAt])
+  @@map("medical_records")
+}
+
+model Allergy {
+  id          String    @id @default(uuid())
+  patientId   String
+  allergen    String
+  severity    String    // MILD, MODERATE, SEVERE
+  reaction    String?
+  diagnosedDate DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relationships
+  patient     Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@index([allergen])
+  @@map("allergies")
+}
+
+model Prescription {
+  id              String    @id @default(uuid())
+  patientId       String
+  doctorId        String
+  appointmentId   String?   @unique
+  medications     Json      // Array of {name, dosage, frequency, duration, instructions}
+  diagnosis       String
+  notes           String?
+  validUntil      DateTime?
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relationships
+  patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Doctor    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  appointment     Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([appointmentId])
+  @@index([createdAt])
+  @@map("prescriptions")
+}
+
+// ============================================
+// AI RECOMMENDATION MODELS
+// ============================================
+
+model AIRecommendation {
+  id              String    @id @default(uuid())
+  diagnosis       String
+  patientAge      Int
+  patientGender   Gender
+  symptoms        String[]
+  contraindications String[]
+  recommendations Json      // Array of {medication, dosage, reasoning, safetyScore, suitabilityScore}
+  modelVersion    String
+  confidence      Decimal   @db.Decimal(5, 2)
+  createdAt       DateTime  @default(now())
+
+  @@index([diagnosis])
+  @@index([createdAt])
+  @@map("ai_recommendations")
+}
+
+// ============================================
+// NOTIFICATION MODELS
+// ============================================
+
+model Notification {
+  id          String             @id @default(uuid())
+  userId      String
+  type        NotificationType
+  status      NotificationStatus @default(PENDING)
+  recipient   String             // Email address
+  subject     String
+  message     String
+  metadata    Json?              // Additional data (appointmentId, etc.)
+  sentAt      DateTime?
+  failedAt    DateTime?
+  errorMessage String?
+  retryCount  Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  // Relationships
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// AUDIT & LOGGING MODELS
+// ============================================
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  action      String    // LOGIN, LOGOUT, CREATE_APPOINTMENT, UPDATE_RECORD, etc.
+  entity      String?   // User, Appointment, MedicalRecord, etc.
+  entityId    String?
+  changes     Json?     // Before/after values
+  ipAddress   String?
+  userAgent   String?
+  timestamp   DateTime  @default(now())
+
+  // Relationships
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entity])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
+
+// ============================================
+// SYSTEM CONFIGURATION MODELS
+// ============================================
+
+model SystemSetting {
+  id          String    @id @default(uuid())
+  key         String    @unique
+  value       String
+  description String?
+  isEditable  Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([key])
+  @@map("system_settings")
+}
+
+// ============================================
+// PASSWORD RESET TOKENS
+// ============================================
+
+model PasswordResetToken {
+  id          String    @id @default(uuid())
+  email       String
+  token       String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// ============================================
+// EMAIL VERIFICATION TOKENS
+// ============================================
+
+model EmailVerificationToken {
+  id          String    @id @default(uuid())
+  email       String
+  token       String    @unique
+  expiresAt   DateTime
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+  @@index([token])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
