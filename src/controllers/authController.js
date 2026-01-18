@@ -1,11 +1,6 @@
 import { prisma } from "../config/db.js";
 import bcrypt from "bcryptjs";
-import { SignJWT } from "jose";
 import { generateToken } from "../utils/TokenGeneration.js";
-
-const JWT_SECRET = new TextEncoder().encode(
-    process.env.JWT_SECRET || "fallback_secret_for_dev_only"
-);
 
 export const register = async (req, res) => {
     try {
@@ -27,6 +22,9 @@ export const register = async (req, res) => {
             yearsOfExperience,
             consultationFee
         } = req.body;
+
+        // Get profile image URL from Cloudinary (if uploaded)
+        const profilePicture = req.file ? req.file.path : null;
 
         // 1. Basic Validation
         if (!email || !password || !role) {
@@ -63,7 +61,8 @@ export const register = async (req, res) => {
                         lastName,
                         phoneNumber,
                         dateOfBirth: new Date(dateOfBirth),
-                        gender
+                        gender,
+                        profilePicture // Added Cloudinary URL
                     }
                 });
             } else if (role === "DOCTOR") {
@@ -75,10 +74,11 @@ export const register = async (req, res) => {
                         phoneNumber,
                         gender,
                         specialization,
-                        qualifications,
+                        qualifications: Array.isArray(qualifications) ? qualifications : [qualifications],
                         licenseNumber,
                         yearsOfExperience: parseInt(yearsOfExperience),
-                        consultationFee: parseFloat(consultationFee)
+                        consultationFee: parseFloat(consultationFee),
+                        profilePicture // Added Cloudinary URL
                     }
                 });
             } else if (role === "ADMIN") {
@@ -89,8 +89,8 @@ export const register = async (req, res) => {
             return { user: newUser, profile };
         });
 
-        // 5. Generate token
-        const token = await generateToken({
+        // 5. Generate token (sets cookie)
+        await generateToken({
             id: result.user.id,
             email: result.user.email,
             role: result.user.role
@@ -103,8 +103,7 @@ export const register = async (req, res) => {
                 email: result.user.email,
                 role: result.user.role
             },
-            profile: result.profile,
-            token
+            profile: result.profile
         });
 
     } catch (error) {
@@ -131,7 +130,7 @@ export const login = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(401).json({ message: "Invalid credentials" });
+            return res.status(401).json({ message: "user not found" });
         }
 
         // 2. Check password

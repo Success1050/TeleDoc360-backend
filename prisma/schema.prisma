@@ -102,6 +102,7 @@ model Patient {
   userId            String    @unique
   firstName         String
   lastName          String
+  profileImage      String?
   phoneNumber       String?
   dateOfBirth       DateTime
   gender            Gender
@@ -133,6 +134,7 @@ model Doctor {
   firstName             String
   lastName              String
   phoneNumber           String?
+  profileImage      String?
   gender                Gender
   specialization        String
   qualifications        String[]
