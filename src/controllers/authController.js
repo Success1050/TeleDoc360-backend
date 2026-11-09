@@ -95,7 +95,7 @@ export const register = async (req, res) => {
         });
 
         // 5. Generate token (sets cookie)
-        await generateToken({
+        const token = await generateToken({
             id: result.user.id,
             email: result.user.email,
             role: result.user.role
@@ -103,6 +103,7 @@ export const register = async (req, res) => {
 
         res.status(201).json({
             message: "User registered successfully",
+            token,
             user: {
                 id: result.user.id,
                 email: result.user.email,
@@ -151,7 +152,7 @@ export const login = async (req, res) => {
         });
 
         // 4. Generate token
-        await generateToken({
+        const token = await generateToken({
             id: user.id,
             email: user.email,
             role: user.role
@@ -159,6 +160,7 @@ export const login = async (req, res) => {
 
         res.json({
             message: "Login successful",
+            token,
             user: {
                 id: user.id,
                 email: user.email,

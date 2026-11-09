@@ -17,6 +17,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+// Trust reverse proxy for secure cookies in deployment (Render, AWS, etc.)
+app.set("trust proxy", 1);
+
 // Allowed frontend origins
 const allowedOrigins = [
   process.env.CLIENT_URL,
