@@ -49,6 +49,13 @@ enum AppointmentType {
   ROUTINE_CHECKUP
 }
 
+enum UrgencyLevel {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
 enum SlotStatus {
   AVAILABLE
   RESERVED
@@ -113,6 +120,11 @@ model Patient {
   emergencyContact  String?
   bloodGroup        String?
   profilePicture    String?
+  riskScore         Float     @default(0.0)
+  reputationScore   Float     @default(100.0)
+  rewardPoints      Int       @default(0)
+  attendanceRate    Float     @default(100.0)
+  missedAppointments Int      @default(0)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -146,6 +158,10 @@ model Doctor {
   rating                Decimal?  @db.Decimal(3, 2)
   totalRatings          Int       @default(0)
   isAvailableForBooking Boolean   @default(true)
+  isApproved            Boolean   @default(false)
+  reputationScore       Float     @default(100.0)
+  rewardPoints          Int       @default(0)
+  responseTimeMinutes   Int?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -159,6 +175,8 @@ model Doctor {
   @@index([userId])
   @@index([specialization])
   @@index([licenseNumber])
+  @@index([isApproved])
+  @@index([reputationScore])
   @@map("doctors")
 }
 
@@ -174,6 +192,8 @@ model Appointment {
   appointmentTime   DateTime
   duration          Int               @default(30) // in minutes
   type              AppointmentType   @default(CONSULTATION)
+  urgencyLevel      UrgencyLevel      @default(MEDIUM)
+  priorityScore     Float?
   status            AppointmentStatus @default(REQUESTED)
   reason            String?
   symptoms          String?
@@ -199,6 +219,7 @@ model Appointment {
   @@index([appointmentDate])
   @@index([status])
   @@index([appointmentDate, appointmentTime])
+  @@index([priorityScore])
   @@map("appointments")
 }
 
